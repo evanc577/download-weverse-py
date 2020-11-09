@@ -17,7 +17,7 @@ except ImportError:
 class WeverseUrls:
     info = 'https://weversewebapi.weverse.io/wapi/v1/communities/info'
     artistTab = 'https://weversewebapi.weverse.io/wapi/v1/communities/{}/posts/artistTab'
-    toFans = 'https://weversewebapi.weverse.io/wapi/v1/stream/community/{}/toFans'
+    toFans = 'https://weversewebapi.weverse.io/wapi/v1/stream/community/{}/toFans?pageSize=100'
     post = 'https://weversewebapi.weverse.io/wapi/v1/communities/{}/posts/{}'
 
 config = {}
