@@ -18,8 +18,8 @@ except ImportError:
 
 class WeverseUrls:
     info = 'https://weversewebapi.weverse.io/wapi/v1/communities/info'
-    artistTab = 'https://weversewebapi.weverse.io/wapi/v1/communities/{}/posts/artistTab?pageSize=100&from={}'
-    toFans = 'https://weversewebapi.weverse.io/wapi/v1/stream/community/{}/toFans?pageSize=100&from={}'
+    artistTab = 'https://weversewebapi.weverse.io/wapi/v1/communities/{}/posts/artistTab?pageSize={}&from={}'
+    toFans = 'https://weversewebapi.weverse.io/wapi/v1/stream/community/{}/toFans?pageSize={}&from={}'
     post = 'https://weversewebapi.weverse.io/wapi/v1/communities/{}/posts/{}'
 
 config = {}
@@ -64,7 +64,9 @@ def download_post(artist_id, post_type, post, combine_categories=False):
 
         # download videos
         if 'attachedVideos' in post:
-            r = s.get(WeverseUrls.post.format(artist_id, post_id))
+            url = WeverseUrls.post.format(artist_id, post_id)
+            print(f'GET {url}')
+            r = s.get(url)
             post_detail = r.json()
             for i,video in enumerate(post_detail['attachedVideos']):
                 # get video extension
@@ -140,6 +142,7 @@ def main():
 
     # get artist id
     print('Fetching artist id...')
+    print(f'GET {WeverseUrls.info}')
     r = s.get(WeverseUrls.info)
     for community in r.json()['communities']:
         if config['artist'].lower() == community['name'].lower():
@@ -153,30 +156,46 @@ def main():
     # get posts
     print('Downloading posts...')
     last_id = ''
+    posts_remain = config.get('recentArtist', None)
     while True:
-        r = s.get(WeverseUrls.artistTab.format(artist_id, last_id))
+        if posts_remain is not None:
+            url = WeverseUrls.artistTab.format(artist_id, posts_remain, last_id)
+        else:
+            url = WeverseUrls.artistTab.format(artist_id, 100, last_id)
+        print(f'GET {url}')
+        r = s.get(url)
         posts = r.json()['posts']
+        if posts_remain is not None:
+            posts_remain -= len(posts)
         ended = r.json()['isEnded']
         # download posts
         func = partial(download_post, artist_id, 'artist', **download_kwargs)
         with Pool(num_processes) as pool:
             pool.map(func, posts)
-        if ended:
+        if ended or (posts_remain is not None and posts_remain <= 0):
             break
         last_id = r.json()['lastId']
 
     # get moments
     print('Downloading moments...')
     last_id = ''
+    moments_remain = config.get('recentMoments', None)
     while True:
-        r = s.get(WeverseUrls.toFans.format(artist_id, last_id))
+        if moments_remain is not None:
+            url = WeverseUrls.toFans.format(artist_id, moments_remain, last_id)
+        else:
+            url = WeverseUrls.toFans.format(artist_id, 100, last_id)
+        print(f'GET {url}')
+        r = s.get(url)
         moments = r.json()['posts']
+        if moments_remain is not None:
+            moments_remain -= len(moments)
         ended = r.json()['isEnded']
         # download moments
         func = partial(download_post, artist_id, 'moments', **download_kwargs)
         with Pool(num_processes) as pool:
             pool.map(func, moments)
-        if ended:
+        if ended or (moments_remain is not None and moments_remain <= 0):
             break
         last_id = r.json()['lastId']
 
