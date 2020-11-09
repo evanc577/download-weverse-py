@@ -90,7 +90,7 @@ def download_image(url, path, ts=None):
 
 
 def write_content(path, post_id, user, body, ts_str, ts):
-    with open(path, 'w') as f:
+    with open(path, 'w', encoding='utf-8') as f:
         print(f'https://weverse.io/{config["artist"].lower()}/artist/{post_id}', file=f)
         print(f'{user} ({ts_str}):', file=f)
         print(f'{body}', file=f)
