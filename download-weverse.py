@@ -57,14 +57,15 @@ def download_post(post, post_type):
         print(f'Downloading {filename_prefix}')
 
         # download photos
-        for i,photo in enumerate(post['photos']):
-            # get photonextension
-            match = re.match(r'.*\.(?P<ext>.+)$', photo['orgImgUrl'])
-            ext = match.group('ext')
+        if 'photos' in post:
+            for i,photo in enumerate(post['photos']):
+                # get photonextension
+                match = re.match(r'.*\.(?P<ext>.+)$', photo['orgImgUrl'])
+                ext = match.group('ext')
 
-            # download photo
-            photo_path = os.path.join(temp_dir, f'{filename_prefix}_img{i:02d}.{ext}') 
-            download_image(photo['orgImgUrl'], photo_path)
+                # download photo
+                photo_path = os.path.join(temp_dir, f'{filename_prefix}_img{i:02d}.{ext}') 
+                download_image(photo['orgImgUrl'], photo_path)
 
         # write content txt
         content_path = os.path.join(temp_dir, f'{filename_prefix}_content.txt')
