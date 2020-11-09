@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 from datetime import datetime
+from functools import partial
 from http import cookiejar
+from multiprocessing import Pool
 import json
 import os
 import re
@@ -16,7 +18,7 @@ except ImportError:
 
 class WeverseUrls:
     info = 'https://weversewebapi.weverse.io/wapi/v1/communities/info'
-    artistTab = 'https://weversewebapi.weverse.io/wapi/v1/communities/{}/posts/artistTab'
+    artistTab = 'https://weversewebapi.weverse.io/wapi/v1/communities/{}/posts/artistTab?pageSize=100&from={}'
     toFans = 'https://weversewebapi.weverse.io/wapi/v1/stream/community/{}/toFans?pageSize=100&from={}'
     post = 'https://weversewebapi.weverse.io/wapi/v1/communities/{}/posts/{}'
 
@@ -28,14 +30,14 @@ def dwexit(code):
     exit(code)
 
 
-def download_post(post, artist_id, post_type, combine_categories=False):
+def download_post(artist_id, post_type, post, combine_categories=False):
     with tempfile.TemporaryDirectory() as temp_dir:
         if combine_categories:
             post_type = ''
         post_id = post['id']
         user = post['communityUser']['profileNickname']
         user_image_url = post['communityUser']['profileImgPath']
-        body = post['body']
+        body = post.get('body', '')
         dt = datetime.strptime(post['createdAt'], '%Y-%m-%dT%H:%M:%S%z')
         ts = dt.timestamp()
         date_str = dt.strftime("%y%m%d")
@@ -111,15 +113,15 @@ def main():
     # read config
     with open('config.yml', 'r') as f:
         config = yaml.load(f, Loader=Loader)
-    if 'combineCategories' in config and config['combineCategories']:
-        combine_categories = True
+    combine_categories = config.get('combine_categories', False)
+    if combine_categories:
         os.makedirs(config['downloadPath'], exist_ok=True)
     else:
-        combine_categories = False
         artist_path = os.path.join(config['downloadPath'], 'artist')
         moments_path = os.path.join(config['downloadPath'], 'moments')
         os.makedirs(artist_path, exist_ok=True)
         os.makedirs(moments_path, exist_ok=True)
+    num_processes = int(config.get('numProcesses', None))
 
     # load cookies file
     cj = cookiejar.MozillaCookieJar(config['cookiesFile'])
@@ -150,11 +152,18 @@ def main():
 
     # get posts
     print('Downloading posts...')
-    r = s.get(WeverseUrls.artistTab.format(artist_id))
-    posts = r.json()['posts']
-    # download posts
-    for post in posts:
-        download_post(post, artist_id, 'artist', **download_kwargs)
+    last_id = ''
+    while True:
+        r = s.get(WeverseUrls.artistTab.format(artist_id, last_id))
+        posts = r.json()['posts']
+        ended = r.json()['isEnded']
+        # download posts
+        func = partial(download_post, artist_id, 'artist', **download_kwargs)
+        with Pool(num_processes) as pool:
+            pool.map(func, posts)
+        if ended:
+            break
+        last_id = r.json()['lastId']
 
     # get moments
     print('Downloading moments...')
@@ -164,12 +173,11 @@ def main():
         moments = r.json()['posts']
         ended = r.json()['isEnded']
         # download moments
-        for moment in moments:
-            download_post(moment, artist_id, 'moments', **download_kwargs)
-
+        func = partial(download_post, artist_id, 'moments', **download_kwargs)
+        with Pool(num_processes) as pool:
+            pool.map(func, moments)
         if ended:
             break
-
         last_id = r.json()['lastId']
 
 
