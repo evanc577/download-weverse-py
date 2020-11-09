@@ -28,8 +28,10 @@ def dwexit(code):
     exit(code)
 
 
-def download_post(post, artist_id, post_type):
+def download_post(post, artist_id, post_type, combine_categories=False):
     with tempfile.TemporaryDirectory() as temp_dir:
+        if combine_categories:
+            post_type = ''
         post_id = post['id']
         user = post['communityUser']['profileNickname']
         user_image_url = post['communityUser']['profileImgPath']
@@ -109,8 +111,15 @@ def main():
     # read config
     with open('config.yml', 'r') as f:
         config = yaml.load(f, Loader=Loader)
-    artist_path = os.path.join(config['downloadPath'], 'artist')
-    moments_path = os.path.join(config['downloadPath'], 'moments')
+    if 'combineCategories' in config and config['combineCategories']:
+        combine_categories = True
+        os.makedirs(config['downloadPath'], exist_ok=True)
+    else:
+        combine_categories = False
+        artist_path = os.path.join(config['downloadPath'], 'artist')
+        moments_path = os.path.join(config['downloadPath'], 'moments')
+        os.makedirs(artist_path, exist_ok=True)
+        os.makedirs(moments_path, exist_ok=True)
 
     # load cookies file
     cj = cookiejar.MozillaCookieJar(config['cookiesFile'])
@@ -128,27 +137,34 @@ def main():
             break;
 
     # get artist id
+    print('Fetching artist id...')
     r = s.get(WeverseUrls.info)
     for community in r.json()['communities']:
         if config['artist'].lower() == community['name'].lower():
             artist_id = community['id']
 
-    os.makedirs(artist_path, exist_ok=True)
-    os.makedirs(moments_path, exist_ok=True)
+
+    download_kwargs = {
+        'combine_categories': combine_categories,
+    }
 
     # get posts
+    print('Fetching posts...')
     r = s.get(WeverseUrls.artistTab.format(artist_id))
     posts = r.json()['posts']
     # download posts
+    print('Downloading posts...')
     for post in posts:
-        download_post(post, artist_id, 'artist')
+        download_post(post, artist_id, 'artist', **download_kwargs)
 
     # get moments
+    print('Fetching moments...')
     r = s.get(WeverseUrls.toFans.format(artist_id))
     moments = r.json()['posts']
     # download moments
+    print('Downloading moments...')
     for moment in moments:
-        download_post(moment, artist_id, 'moments')
+        download_post(moment, artist_id, 'moments', **download_kwargs)
 
 
 if __name__ == '__main__':
