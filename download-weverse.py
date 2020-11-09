@@ -24,13 +24,32 @@ class WeverseUrls:
 
 config = {}
 
+def init_session(config):
+    # load cookies file
+    cj = cookiejar.MozillaCookieJar(config['cookiesFile'])
+    cj.load()
+
+    s = requests.session()
+
+    # set cookie
+    s.cookies = cj
+
+    # set header
+    for cookie in cj:
+        if cookie.name == 'we_access_token':
+            s.headers.update({'Authorization': f'Bearer {cookie.value}'})
+            break;
+
+    return s
+
+
 def dwexit(code):
     if 'keepOpen' not in config or config['keepOpen']:
         input(f'Press Enter to exit')
     exit(code)
 
 
-def download_post(artist_id, post_type, post, combine_categories=False):
+def download_post(artist_id, post_type, config, post, combine_categories=False):
     with tempfile.TemporaryDirectory() as temp_dir:
         if combine_categories:
             post_type = ''
@@ -66,6 +85,7 @@ def download_post(artist_id, post_type, post, combine_categories=False):
         if 'attachedVideos' in post:
             url = WeverseUrls.post.format(artist_id, post_id)
             print(f'GET {url}')
+            s = init_session(config)
             r = s.get(url)
             post_detail = r.json()
             for i,video in enumerate(post_detail['attachedVideos']):
@@ -80,7 +100,7 @@ def download_post(artist_id, post_type, post, combine_categories=False):
 
         # write content txt
         content_path = os.path.join(temp_dir, f'{filename_prefix}_content.txt')
-        write_content(content_path, post_id, user, body, ts_str, ts)
+        write_content(content_path, post_id, user, body, ts_str, ts, config)
 
         os.utime(temp_dir, (ts, ts))
 
@@ -101,7 +121,7 @@ def download_media(url, path, ts=None):
             os.utime(path, (ts, ts))
 
 
-def write_content(path, post_id, user, body, ts_str, ts):
+def write_content(path, post_id, user, body, ts_str, ts, config):
     with open(path, 'w', encoding='utf-8') as f:
         print(f'https://weverse.io/{config["artist"].lower()}/artist/{post_id}', file=f)
         print(f'{user} ({ts_str}):', file=f)
@@ -109,9 +129,6 @@ def write_content(path, post_id, user, body, ts_str, ts):
     os.utime(path, (ts, ts))
 
 def main():
-    global config
-    global s
-
     # read config
     with open('config.yml', 'r') as f:
         config = yaml.load(f, Loader=Loader)
@@ -125,20 +142,7 @@ def main():
         os.makedirs(moments_path, exist_ok=True)
     num_processes = int(config.get('numProcesses', None))
 
-    # load cookies file
-    cj = cookiejar.MozillaCookieJar(config['cookiesFile'])
-    cj.load()
-
-    s = requests.session()
-
-    # set cookie
-    s.cookies = cj
-
-    # set header
-    for cookie in cj:
-        if cookie.name == 'we_access_token':
-            s.headers.update({'Authorization': f'Bearer {cookie.value}'})
-            break;
+    s = init_session(config)
 
     # get artist id
     print('Fetching artist id...')
@@ -169,7 +173,7 @@ def main():
             posts_remain -= len(posts)
         ended = r.json()['isEnded']
         # download posts
-        func = partial(download_post, artist_id, 'artist', **download_kwargs)
+        func = partial(download_post, artist_id, 'artist', config, **download_kwargs)
         with Pool(num_processes) as pool:
             pool.map(func, posts)
         if ended or (posts_remain is not None and posts_remain <= 0):
@@ -192,7 +196,7 @@ def main():
             moments_remain -= len(moments)
         ended = r.json()['isEnded']
         # download moments
-        func = partial(download_post, artist_id, 'moments', **download_kwargs)
+        func = partial(download_post, artist_id, 'moments', config, **download_kwargs)
         with Pool(num_processes) as pool:
             pool.map(func, moments)
         if ended or (moments_remain is not None and moments_remain <= 0):
