@@ -17,7 +17,7 @@ except ImportError:
 class WeverseUrls:
     info = 'https://weversewebapi.weverse.io/wapi/v1/communities/info'
     artistTab = 'https://weversewebapi.weverse.io/wapi/v1/communities/{}/posts/artistTab'
-    toFans = 'https://weversewebapi.weverse.io/wapi/v1/stream/community/{}/toFans?pageSize=100'
+    toFans = 'https://weversewebapi.weverse.io/wapi/v1/stream/community/{}/toFans?pageSize=100&from={}'
     post = 'https://weversewebapi.weverse.io/wapi/v1/communities/{}/posts/{}'
 
 config = {}
@@ -149,22 +149,28 @@ def main():
     }
 
     # get posts
-    print('Fetching posts...')
+    print('Downloading posts...')
     r = s.get(WeverseUrls.artistTab.format(artist_id))
     posts = r.json()['posts']
     # download posts
-    print('Downloading posts...')
     for post in posts:
         download_post(post, artist_id, 'artist', **download_kwargs)
 
     # get moments
-    print('Fetching moments...')
-    r = s.get(WeverseUrls.toFans.format(artist_id))
-    moments = r.json()['posts']
-    # download moments
     print('Downloading moments...')
-    for moment in moments:
-        download_post(moment, artist_id, 'moments', **download_kwargs)
+    last_id = ''
+    while True:
+        r = s.get(WeverseUrls.toFans.format(artist_id, last_id))
+        moments = r.json()['posts']
+        ended = r.json()['isEnded']
+        # download moments
+        for moment in moments:
+            download_post(moment, artist_id, 'moments', **download_kwargs)
+
+        if ended:
+            break
+
+        last_id = r.json()['lastId']
 
 
 if __name__ == '__main__':
