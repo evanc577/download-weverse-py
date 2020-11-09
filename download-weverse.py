@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 from datetime import datetime
 from http import cookiejar
 import json
@@ -6,6 +7,7 @@ import re
 import requests
 import shutil
 import tempfile
+import traceback
 import yaml
 try:
     from yaml import CLoader as Loader, CDumper as Dumper
@@ -16,28 +18,17 @@ class WeverseUrls:
     info = 'https://weversewebapi.weverse.io/wapi/v1/communities/info'
     artistTab = 'https://weversewebapi.weverse.io/wapi/v1/communities/{}/posts/artistTab'
     toFans = 'https://weversewebapi.weverse.io/wapi/v1/stream/community/{}/toFans'
+    post = 'https://weversewebapi.weverse.io/wapi/v1/communities/{}/posts/{}'
 
-# read config
-with open('config.yml', 'r') as f:
-    config = yaml.load(f, Loader=Loader)
-artist_path = os.path.join(config['downloadPath'], 'artist')
-moments_path = os.path.join(config['downloadPath'], 'moments')
+config = {}
 
-cj = cookiejar.MozillaCookieJar(config['cookiesFile'])
-cj.load()
+def dwexit(code):
+    if 'keepOpen' not in config or config['keepOpen']:
+        input(f'Press Enter to exit')
+    exit(code)
 
-s = requests.session()
 
-# set cookie
-s.cookies = cj
-
-# set header
-for cookie in cj:
-    if cookie.name == 'we_access_token':
-        s.headers.update({'Authorization': f'Bearer {cookie.value}'})
-        break;
-
-def download_post(post, post_type):
+def download_post(post, artist_id, post_type):
     with tempfile.TemporaryDirectory() as temp_dir:
         post_id = post['id']
         user = post['communityUser']['profileNickname']
@@ -59,13 +50,27 @@ def download_post(post, post_type):
         # download photos
         if 'photos' in post:
             for i,photo in enumerate(post['photos']):
-                # get photonextension
+                # get photo extension
                 match = re.match(r'.*\.(?P<ext>.+)$', photo['orgImgUrl'])
                 ext = match.group('ext')
 
                 # download photo
                 photo_path = os.path.join(temp_dir, f'{filename_prefix}_img{i:02d}.{ext}') 
-                download_image(photo['orgImgUrl'], photo_path)
+                download_media(photo['orgImgUrl'], photo_path)
+
+        # download videos
+        if 'attachedVideos' in post:
+            r = s.get(WeverseUrls.post.format(artist_id, post_id))
+            post_detail = r.json()
+            for i,video in enumerate(post_detail['attachedVideos']):
+                # get video extension
+                match = re.match(r'.*\.(?P<ext>.+)$', video['videoUrl'])
+                ext = match.group('ext')
+
+                # download video
+                video_path = os.path.join(temp_dir, f'{filename_prefix}_vid{i:02d}.{ext}') 
+                download_media(video['videoUrl'], video_path)
+
 
         # write content txt
         content_path = os.path.join(temp_dir, f'{filename_prefix}_content.txt')
@@ -80,7 +85,7 @@ def download_post(post, post_type):
         os.rename(temp_dir2, dir_path)
 
 
-def download_image(url, path, ts=None):
+def download_media(url, path, ts=None):
     r = requests.get(url)
     if not r.ok:
         raise Exception("Could not download image")
@@ -97,8 +102,31 @@ def write_content(path, post_id, user, body, ts_str, ts):
         print(f'{body}', file=f)
     os.utime(path, (ts, ts))
 
+def main():
+    global config
+    global s
 
-if __name__ == '__main__':
+    # read config
+    with open('config.yml', 'r') as f:
+        config = yaml.load(f, Loader=Loader)
+    artist_path = os.path.join(config['downloadPath'], 'artist')
+    moments_path = os.path.join(config['downloadPath'], 'moments')
+
+    # load cookies file
+    cj = cookiejar.MozillaCookieJar(config['cookiesFile'])
+    cj.load()
+
+    s = requests.session()
+
+    # set cookie
+    s.cookies = cj
+
+    # set header
+    for cookie in cj:
+        if cookie.name == 'we_access_token':
+            s.headers.update({'Authorization': f'Bearer {cookie.value}'})
+            break;
+
     # get artist id
     r = s.get(WeverseUrls.info)
     for community in r.json()['communities']:
@@ -113,11 +141,21 @@ if __name__ == '__main__':
     posts = r.json()['posts']
     # download posts
     for post in posts:
-        download_post(post, 'artist')
+        download_post(post, artist_id, 'artist')
 
     # get moments
     r = s.get(WeverseUrls.toFans.format(artist_id))
     moments = r.json()['posts']
     # download moments
     for moment in moments:
-        download_post(moment, 'moments')
+        download_post(moment, artist_id, 'moments')
+
+
+if __name__ == '__main__':
+    try:
+        main()
+    except Exception as e:
+        traceback.print_exc()
+        dwexit(1)
+    print('Download complete')
+    dwexit(0)
